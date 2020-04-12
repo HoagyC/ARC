@@ -1,13 +1,12 @@
+# Stolen from the Tiles and Symmetry kernel
+
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
 import pandas as pd
 
 import os
-from os import listdir
-
 import json
-import csv
 from pathlib import Path
 from tqdm import tqdm
 import inspect
@@ -18,11 +17,6 @@ from skimage import measure
 
 import warnings
 warnings.filterwarnings("ignore")
-
-training_dir = "./data/evaluation"
-training_files = listdir(training_dir)
-
-tasks = []
 
 def bbox(a):
     try:
@@ -79,10 +73,7 @@ def call_pred_train(t_in, t_out, pred_func):
     if t_out.shape==t_in.shape:
         diff = in_out_diff(t_in,t_out)
         feat['diff'] = diff
-        if t_in[diff!=0].any():
-            feat['cm'] = t_in[diff!=0].max()
-        else:
-            feat['cm'] = 0
+        feat['cm'] = t_in[diff!=0].max()
     else:
         feat['diff'] = (t_in.shape[0]-t_out.shape[0],t_in.shape[1]-t_out.shape[1])
         feat['cm'] = cmask(t_in)
@@ -175,7 +166,7 @@ def test_p_bare(task, pred_func):
         fnum += 1
     t_preds = []
     for i, t in enumerate(task["test"]):
-        t_in = np.array(t["input"]).astype('uint8')
+        t_in, t_out = np.array(t["input"]).astype('uint8'), np.array(t["output"]).astype('uint8')
         t_preds.append(call_pred_test(t_in, pred_func, feat))
     return t_preds
 
@@ -358,76 +349,3 @@ def check_symmetric(a):
         return sym
     except:
         return 0
-
-for task_file in training_files:
-    with open("/".join([training_dir, task_file])) as f:
-        task_id = task_file.split('.')[0]
-        tasks.append((task_id,json.load(f)))
-
-def get_output_shapes(task):
-    test_outputs = [np.array(f['output']) for f in task['test']]
-    shapes = [f.shape for f in test_outputs]
-    return(shapes)
-
-def guess_output_shapes(task):
-    outputs = [np.array(f['output']) for f in task['train']]
-    shapes = [f.shape for f in outputs]
-    if len(set(shapes)) == 1:
-        return [shapes[0]]*len(task['test'])
-    shape_pairs = get_shape_pairs(task)
-    print(shape_pairs)
-    if all([a == b for a, b in shape_pairs]):
-        return [get_shape(t['input']) for t in task['test']]
-    
-    d1 = [sp[0] for sp in shape_pairs]
-    d2 = [sp[1] for sp in shape_pairs]
-
-    # if len(set(d1)) == 1 and 
-    return 0
-
-
-
-def get_shape_pairs(task):
-    pairs = []
-    for t in task['train']:
-        pairs.append((get_shape(t['input']), get_shape(t['output'])))
-    return pairs
-
-def flattener(pred):
-    str_pred = str([row for row in pred])
-    str_pred = str_pred.replace(', ', '')
-    str_pred = str_pred.replace('[[', '|')
-    str_pred = str_pred.replace('][', '|')
-    str_pred = str_pred.replace(']]', '|')
-    return str_pred
-
-def get_shape(t):
-    return np.shape(np.array(t))
-
-right_count = 0
-# for t in tasks:
-#     guess_outputs = guess_output_shapes(t)
-#     target_outputs = get_output_shapes(t)
-#     print(guess_outputs, target_outputs)
-
-#     if guess_outputs == target_outputs:
-#         right_count += 1
-
-# print(right_count, right_count/len(tasks))
-
-output = []
-for num, (task_id, task) in enumerate(tasks):
-    result = test_p_bare(task, patch_image)
-    for i, r in enumerate(result):
-        flat_result = [flattener(r.tolist())]
-        flat_result.insert(0, task_id + '_' + str(i))
-        row = ', '.join(flat_result)
-        output.append(row)
-        print(row)
-
-with open('submission.csv', 'w') as sub:
-    writer = csv.writer(sub, delimiter='$', quoting=csv.QUOTE_NONE)
-    header = 'output_id, output'
-    writer.writerow([header])
-    for row in output:
-        writer.writerow([row])

@@ -175,7 +175,7 @@ def test_p_bare(task, pred_func):
         fnum += 1
     t_preds = []
     for i, t in enumerate(task["test"]):
-        t_in = np.array(t["input"]).astype('uint8')
+        t_in, t_out = np.array(t["input"]).astype('uint8'), np.array(t["output"]).astype('uint8')
         t_preds.append(call_pred_test(t_in, pred_func, feat))
     return t_preds
 
@@ -418,16 +418,14 @@ right_count = 0
 output = []
 for num, (task_id, task) in enumerate(tasks):
     result = test_p_bare(task, patch_image)
-    for i, r in enumerate(result):
-        flat_result = [flattener(r.tolist())]
-        flat_result.insert(0, task_id + '_' + str(i))
-        row = ', '.join(flat_result)
-        output.append(row)
-        print(row)
+    flat_results = [flattener(r) for r in result]
+    # print(np.array(task['test'][0]['output']), result[0])
+    flat_results.insert(0, task_id)
+    row = ', '.join(flat_results)
+    output.append(row)
+    print(row)
 
 with open('submission.csv', 'w') as sub:
     writer = csv.writer(sub, delimiter='$', quoting=csv.QUOTE_NONE)
-    header = 'output_id, output'
-    writer.writerow([header])
     for row in output:
         writer.writerow([row])
