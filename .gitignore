@@ -1,3 +1,5 @@
 apps/
 data/
+.idea/
 
+__pycache__/

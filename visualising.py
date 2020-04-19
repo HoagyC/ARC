@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import numpy as np
 
+
 if __name__ == "__main__":
     data_path = Path('/kaggle/input/abstraction-and-reasoning-challenge/')
     training_path = data_path / 'training'
@@ -17,6 +18,7 @@ if __name__ == "__main__":
 
     training_tasks = sorted(os.listdir(training_path))
     evaluation_tasks = sorted(os.listdir(evaluation_path))
+
 
 def plot_grid(grid):
     cmap = colors.ListedColormap(
@@ -33,7 +35,29 @@ def plot_grid(grid):
     ax.set_yticklabels([])
     plt.show()
 
-def plot_one(ax, i,train_or_test,input_or_output):
+
+def plot_grids(grids):
+    cmap = colors.ListedColormap(
+        ['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00',
+         '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'])
+    norm = colors.Normalize(vmin=0, vmax=9)
+
+    fig, ax = plt.subplots(1, len(grids))
+    for i in range(len(grids)):
+        ax[i].imshow(grids[i], cmap=cmap, norm=norm)
+        ax[i].grid(True, which='both', color='lightgrey', linewidth=0.5)
+        ax[i].set_yticks([x - 0.5 for x in range(1 + len(grids[i]))])
+        ax[i].set_xticks([x - 0.5 for x in range(1 + len(grids[i][0]))])
+        ax[i].set_xticklabels([])
+        ax[i].set_yticklabels([])
+    plt.show()
+
+
+
+
+
+
+def plot_one(ax, i, train_or_test, input_or_output):
     cmap = colors.ListedColormap(
         ['#000000', '#0074D9','#FF4136','#2ECC40','#FFDC00',
          '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'])
