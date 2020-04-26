@@ -167,7 +167,7 @@ def solve(task, seconds):
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "_main__":
     training_dir = "./data/training"
     training_files = sorted(listdir(training_dir))
 
@@ -205,5 +205,11 @@ if __name__ == "__main__":
         print(i, solves)
 
 
-# train000 = [upsample, [[3, 3], [], []], logical_and, [[], [], [[tile, [[3, 3], [], []]]]]]
+train000 = [upsample, [[3, 3], [], []], logical_and, [[], [], [[tile, [[3, 3], [], []]]]]]
+def flatten(l):
+    for el in l:
+        if isinstance(el, collections.Iterable) and not isinstance(el, (str, bytes)):
+            yield from flatten(el)
+        else:
+            yield el
 # train001 = [colormap, [[4], [], [[enclosed, [], [], []]]]]

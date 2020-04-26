@@ -9,6 +9,7 @@
 
 import numpy as np
 from operator import itemgetter
+import collections
 
 
 def attrs(**attrs):
