@@ -2,5 +2,7 @@ apps/
 data/
 .idea/
 venv/
+models/
+test-output/
 
 __pycache__/

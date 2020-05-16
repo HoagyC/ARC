@@ -8,83 +8,10 @@ import copy
 from operator import itemgetter
 
 from visualising import plot_grids
-from gridRL import pad_grid, GridRL
+from gridRL import pad_grid, GridRL, flatten, build_flat_model
+from DSL_functions import get_func_list, get_num_list, evaluate, logical_and, tile, upsample, evaluate_flat, color_map, enclosed, rectangulate
 
-
-def evaluate(program: [], input_image: np.array):
-    # Make sure the input is a np.array
-    image = copy.copy(input_image)
-    assert type(input_image) == np.ndarray
-
-    for i, x in enumerate(program):
-        if not callable(x):
-            continue
-
-        args = program[i+1]
-        final_args = []
-        numbers = args[0]
-        points = args[1]
-        grids = args[2]
-        for n in numbers:
-            if type(n) == list:
-                final_args.append(min(9, evaluate(n, input_image)))
-            else:
-                assert type(n) == int
-                final_args.append(n)
-
-        for p in points:
-            if type(p) == list:
-                final_args.append(evaluate(p, input_image))
-            else:
-                assert type(p) == tuple
-                final_args.append(p)
-
-        for g in grids:
-            if type(g) == list:
-                result = evaluate(g, input_image)
-                shape_crop = np.minimum(result.shape, (25, 25))
-                result = result[:shape_crop[0], :shape_crop[1]]
-                final_args.append(result)
-        image = x(image, *final_args)
-
-    return image
-
-
-def build(prog_len=1, start=[]):
-    functions = [identity, identity, identity, swap_color, tile, upsample, color_map, enclosed, clip, logical_and, wrap, select_col,
-                 flip, rotate, crop, rectangulate, not_, concath, concatv]
-    points = [(0, 0)]
-    numbers = [1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, count_col, count, top_col]
-
-    def add_function():
-        add = random.choice(functions)
-
-        new_fn = [add, add_args(add)]
-
-        return new_fn
-
-    def add_args(func):
-        add_nums, add_points, add_grids = [], [], []
-        if func.numbers:
-            nums = random.choices(numbers, k=func.numbers)
-            for n in nums:
-                if type(n) == int:
-                    add_nums.append(n)
-                else:
-                    add_nums.append([n, add_args(n)])
-
-        if func.points:
-            add_points = random.choices(points, k=func.points)
-
-        if func.grids:
-            add_grids.append(add_function())
-
-        return [add_nums, add_points, add_grids]
-
-    for _ in range(prog_len):
-        start += add_function()
-
-    return start
+import torch
 
 
 def total_fitness(p, e):
@@ -109,68 +36,63 @@ def evaluate_fitness(program, task):
         o = np.array(sample['output'])
 
         # For each fitness function
-        images = evaluate(program, i)
+        images = evaluate_flat(program, i)
         score += total_fitness(images, o)
 
     return score
 
 
-def solve(task, seconds):
+def solve(task, seconds, model, temp):
     start_time = time.time()
-    num_programs = 10
-    programs = [build(1, []) for _ in range(num_programs)]
     best_score = np.inf
+    best_program = None
+
+    in_image = np.array(task['train'][0]['input'])
+    in_image = pad_grid(in_image)
+    out_image = np.array(task['train'][0]['output'])
+    out_image = pad_grid(out_image)
+
     while time.time() - start_time < seconds:
-        scores = []
 
-        for p in programs:
-            scores.append(evaluate_fitness(p, task['train']))
+        program = build_flat_model(model, in_image, out_image, temp=temp)
+        while len(program) > 40:
+            program = build_flat_model()
 
-        min_score = min(scores)
+        score = evaluate_fitness(program, task['train'])
 
-        if min_score == 0:
-            best_p = programs[scores.index(min_score)]
-            final_score = evaluate_fitness(best_p, task['test'])
-            if final_score == 0:
-                print(time.time() - start_time)
-                return 10
-            else:
-                return 1
-
-        if min_score < best_score:
-            print(min_score)
+        if score < best_score:
+            best_score = score
+            best_program = program
             start_time = time.time()
-            best_p = programs[scores.index(min_score)]
-            best_score = min_score
 
-        score_prog = sorted(zip(scores, programs), key=itemgetter(0))
-        programs = [x for _, x in score_prog][:5]
-        new_programs = []
-        for i, p in enumerate(programs):
-            new_programs.append(p)
-            new_p = copy.copy(p)
-            if random.random() > 0.5:
-                new_programs.append(build(1, new_p))
+        if best_score == 0:
+            final_score = evaluate_fitness(best_program, task['test'])
+            print(time.time() - start_time, best_program)
+
+            if final_score == 0:
+                return 10, final_score
             else:
-                new_programs.append(build(1, []))
+                return 1, final_score
 
-        programs = new_programs
+    if best_score < 5:
+        print('got close, scored ', evaluate_fitness(best_program, task['test']))
 
-    best_p = programs[scores.index(min_score)]
-    if min_score < 5:
-        print(evaluate_fitness(best_p, task['test']))
+    # input_im = np.array(task['train'][1]['input'])
+    # output_im = np.array(task['train'][1]['output'])
+    # plot_grids([input_im, evaluate_flat(best_program, input_im), output_im])
 
-    input_im = np.array(task['train'][1]['input'])
-    output_im = np.array(task['train'][1]['output'])
-    plot_grids([input_im, evaluate(best_p, input_im), output_im])
-
-    return 0
+    final_score = evaluate_fitness(best_program, task['test'])
+    print(best_program)
+    return 0, final_score
 
 
-if __name__ == "_main__":
+if __name__ == "__main__":
+
+    # Setting paths for getting files.
     training_dir = "./data/training"
     training_files = sorted(listdir(training_dir))
 
+    # Getting task ids for tasks already solved.
     if os.path.isfile('success.txt'):
         with open('success.txt', 'r+') as f:
             ids = f.read()
@@ -178,38 +100,49 @@ if __name__ == "_main__":
     else:
         success_ids = []
 
+    # Getting all tasks and compiling into a list.
     tasks = []
     for task_file in training_files:
         with open("/".join([training_dir, task_file])) as f:
             task_id = task_file.split(".")[0]
             tasks.append((task_id, json.load(f)))
 
-    task = tasks[1][1]
-    # train001 = [wrap, [[1, [[swap_color, [[2, 4], [], []]]], [], []]]]
-    # print(evaluate_fitness(train001, task['train']))
-    # print(evaluate_fitness(train001, task['test']))
-    input_im = np.array(task['train'][1]['input'])
-    g = GridRL([], [1])
-    print(g(pad_grid(input_im), []).shape)
-    output_im = np.array(task['train'][1]['output'])
-    plot_grids([input_im, pad_grid(input_im)])
-
-    solves = 0
-    for i, task in enumerate(tasks):
-        score = solve(task[1], 30)
-        solves += score
-        if score and task[0] not in success_ids:
-            with open('success.txt', 'a+') as f:
-                f.write(str(i) + ' ' + task[0] + '\n')
-                print('NEW SOLVE WOOOOOOOOOOO')
-        print(i, solves)
+    # Setting arguments for solving the model.
+    model_path = 'models/20200508.201046'
+    wait_time = 5
 
 
-train000 = [upsample, [[3, 3], [], []], logical_and, [[], [], [[tile, [[3, 3], [], []]]]]]
-def flatten(l):
-    for el in l:
-        if isinstance(el, collections.Iterable) and not isinstance(el, (str, bytes)):
-            yield from flatten(el)
-        else:
-            yield el
+
+    # Setting up model.
+    func_list = get_func_list()
+    num_list = get_num_list()
+    model = GridRL(num_list, func_list)
+    model.load_state_dict(torch.load(model_path))
+    model.eval()
+
+    # in_im = np.array(tasks[1][1]['train'][0]['input'])
+    # x = evaluate_flat(train001, in_im)
+    # plot_grids([in_im, x])
+
+    # Attempting to solve each task in turn.
+
+    temps = [1, 10, 100, 1000]
+
+    for temp in temps:
+        solves = 0
+        scores = []
+        for i, task in enumerate(tasks[:80]):
+            complete, score = solve(task[1], wait_time, model, temp)
+            solves += complete
+            scores.append(score)
+
+            # Notifying if a previously unsolved task is completed.
+            if complete and task[0] not in success_ids:
+                with open('success.txt', 'a+') as f:
+                    f.write(str(i) + ' ' + task[0] + '\n')
+                    print('NEW SOLVE WOOOOOOOOOOO')
+            print(i, solves, np.mean(np.sqrt(scores)))
+
+
+# train000 = [upsample, 3, 3, logical_and, tile, 3, 3]
 # train001 = [colormap, [[4], [], [[enclosed, [], [], []]]]]

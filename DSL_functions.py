@@ -9,8 +9,12 @@
 
 import numpy as np
 from operator import itemgetter
+import copy
 import collections
 
+import time
+
+from visualising import show_graph
 
 def attrs(**attrs):
     def with_attrs(f):
@@ -24,8 +28,15 @@ def attrs(**attrs):
 def rectangulate(x, n, m):
     recs = []
     bool_grid = x.copy()
+    t = time.time()
     # Rectangles given in form (x, y, x_len, y_len)
     while bool_grid.any():
+        if len(recs) > 9:
+            break
+        if time.time() - t > 10:
+            print('rectangulate failed')
+            print(x)
+            break
         rows = 1
         start = end = 0
         for i, r in enumerate(bool_grid):
@@ -55,7 +66,44 @@ def rectangulate(x, n, m):
     if n < len(recs):
         rec = recs[n]
         x[rec[0]:rec[0]+rec[2], rec[1]:rec[1] + rec[3]] = m
+    x.reshape(x.shape[0], -1)
     return x
+
+
+@attrs(numbers=2, points=0, grids=0)
+def rectangulate_(x, n, m):
+    recs = []
+    y = x.copy()
+    xl, yl = x.shape
+    for i in range(xl):
+        for j in range(yl):
+            if i > 0 and y[i, j] == y[i-1, j]:
+                continue
+            if j > 0 and y[i, j] == y[i, j-1]:
+                continue
+            l, h = 1, 1
+            while l + i <= xl:
+                if all(y[i, j] == y[i:i+1+1, j]):
+                    l = l + 1
+                else:
+                    break
+
+            while h + j <= yl:
+                if all(y[i, j] == y[i:i+l+1, j:j+h+1]):
+                    h = h + 1
+                else:
+                    break
+
+            recs.append(i, j, l, h)
+
+    recs.sort(key=lambda x: -x[2] * x[3])
+
+    y.fill(0)
+    if n < len(recs):
+        rec = recs[n]
+        y[rec[0]:rec[0]+rec[2], rec[1]:rec[1] + rec[3]] = m
+    y.reshape(y.shape[0], -1)
+    return y
 
 
 @attrs(numbers=2, points=0, grids=0)
@@ -103,15 +151,15 @@ def logical_and(x, y):
 
 @attrs(numbers=2, points=0, grids=0)
 def upsample(x, n, m):
-    n = max(5, n)
-    m = max(5, m)
+    n = min(5, n)
+    m = min(5, m)
     return x.repeat(n, axis=0).repeat(m, axis=1)
 
 
 @attrs(numbers=2, points=0, grids=0)
 def tile(x, n, m):
-    n = max(5, n)
-    m = max(5, m)
+    n = min(5, n)
+    m = min(5, m)
     return np.tile(x, (n, m))
 
 
@@ -206,7 +254,7 @@ def rotate(x, n):
 
 @attrs(numbers=0, points=0, grids=1)
 def count(x, y):
-    return np.argwhere(y).sum()
+    return min(9, np.argwhere(y).sum())
 
 
 @attrs(numbers=0, points=0, grids=1)
@@ -227,7 +275,7 @@ def concath(x, y):
 
 @attrs(numbers=1, points=0, grids=1)
 def count_col(x, y, n):
-    return np.argwhere(y == n).sum()
+    return min(9, np.argwhere(y == n).sum())
 
 
 @attrs(numbers=1, points=0, grids=0)
@@ -249,4 +297,89 @@ def roll(x, n, m):
 #     x & y
 #     return np.roll(x, (n, m))
 
+
+def get_func_list():
+    return [identity, identity, identity, swap_color, tile, upsample, color_map, enclosed, clip, logical_and, wrap,
+            select_col, flip, rotate, crop, rectangulate, not_, concath, concatv]
+
+
+def get_num_list():
+    return [1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, count_col, count, top_col]
+
+
+# Takes a program in the DSL and applies it to a grid.
+def evaluate_flat(program: [], input_image: np.array):
+    # Make sure the input is a np.array
+    in_image = copy.copy(input_image)
+    image = copy.copy(input_image)
+    assert type(input_image) == np.ndarray
+    c = 0
+
+    def sub_eval(image, c, prog):
+        current = prog[c]
+        args = []
+        c += 1
+
+        if type(current) == int:
+            return current, c
+
+        if current.numbers:
+            for _ in range(current.numbers):
+                new_arg, c = sub_eval(in_image, c, prog)
+                args += [new_arg]
+
+        if current.grids:
+            for _ in range(current.grids):
+                new_arg, c = sub_eval(in_image, c, prog)
+                args += [new_arg]
+        try:
+            return current(image, *args), c
+        except AttributeError:
+            print(prog, current)
+            show_graph(prog)
+
+    while c < len(program):
+        image, c = sub_eval(image, c, program)
+
+    return image
+
+
+# Takes a program in the DSL and applies it to a grid.
+def evaluate(program: [], input_image: np.array):
+    # Make sure the input is a np.array
+    image = copy.copy(input_image)
+    assert type(input_image) == np.ndarray
+
+    for i, x in enumerate(program):
+        if not callable(x):
+            continue
+
+        args = program[i+1]
+        final_args = []
+        numbers = args[0]
+        points = args[1]
+        grids = args[2]
+        for n in numbers:
+            if type(n) == list:
+                final_args.append(min(9, evaluate(n, input_image)))
+            else:
+                assert type(n) == int
+                final_args.append(n)
+
+        for p in points:
+            if type(p) == list:
+                final_args.append(evaluate(p, input_image))
+            else:
+                assert type(p) == tuple
+                final_args.append(p)
+
+        for g in grids:
+            if type(g) == list:
+                result = evaluate(g, input_image)
+                shape_crop = np.minimum(result.shape, (25, 25))
+                result = result[:shape_crop[0], :shape_crop[1]]
+                final_args.append(result)
+        image = x(image, *final_args)
+
+    return image
 

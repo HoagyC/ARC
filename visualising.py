@@ -4,6 +4,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib import colors
 
+from graphviz import Digraph
+
 
 if __name__ == "__main__":
     data_path = Path('/kaggle/input/abstraction-and-reasoning-challenge/')
@@ -48,10 +50,6 @@ def plot_grids(grids):
     plt.show()
 
 
-
-
-
-
 def plot_one(ax, i, train_or_test, input_or_output):
     cmap = colors.ListedColormap(
         ['#000000', '#0074D9','#FF4136','#2ECC40','#FFDC00',
@@ -91,4 +89,35 @@ def plot_task(task):
             plot_one(axs[0,i],i,'test','input')
             plot_one(axs[1,i],i,'test','output')  
     plt.tight_layout()
-    plt.show() 
+    plt.show()
+
+
+def show_graph(prog):
+    g = Digraph()
+
+    # Adding edges
+    c = 0
+
+    def add_tree(c, prog):
+        current, current_val = prog[c], c
+        g.node(str(c), str(current))
+        print(c)
+        c += 1
+        if type(current) == int:
+            return c
+
+        if current.numbers:
+            for _ in range(current.numbers):
+                g.edge(str(current_val), str(c))
+                c = add_tree(c, prog)
+
+        if current.grids:
+            for _ in range(current.grids):
+                g.edge(str(current_val), str(c))
+                c = add_tree(c, prog)
+        return c
+
+    while c < len(prog):
+        c = add_tree(c, prog)
+
+    g.render('test-output/round-table.gv', view=True)
